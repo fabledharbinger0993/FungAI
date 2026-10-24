@@ -782,7 +782,12 @@ const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const EXTRACT_MODEL = process.env.fungai_MODEL       || "claude-haiku-4-5-20251001";
 const SYNTH_MODEL   = process.env.fungai_SYNTH_MODEL || "claude-sonnet-4-6";
 
-async function callClaude(system, prompt, { model = EXTRACT_MODEL, maxTokens = 2048 } = {}) {
+async function callClaude(system, prompt, opts = {}) {
+  return (await callClaudeFull(system, prompt, opts)).text;
+}
+
+// Same call, but also reports stop_reason so callers can tell a truncated reply from a bad one.
+async function callClaudeFull(system, prompt, { model = EXTRACT_MODEL, maxTokens = 2048 } = {}) {
   const resp = await fetch(ANTHROPIC_API, {
     method: "POST",
     headers: {
@@ -805,7 +810,8 @@ async function callClaude(system, prompt, { model = EXTRACT_MODEL, maxTokens = 2
   }
 
   const data = await resp.json();
-  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "{}";
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "{}";
+  return { text, stopReason: data.stop_reason || null };
 }
 
 // Drop-in for callOllama — used in pipeline for extraction, entity resolution, fact-check
@@ -976,11 +982,13 @@ app.post("/claude", requireApiKey, async (req, res) => {
   try {
     const { system, prompt, model, maxTokens } = req.body || {};
     if (!prompt) return res.status(400).json({ ok: false, error: "prompt required" });
-    const text = await callClaude(system || "", prompt, {
+    const { text, stopReason } = await callClaudeFull(system || "", prompt, {
       model: model || EXTRACT_MODEL,
-      maxTokens: Math.min(Number(maxTokens) || 8192, 8192),
+      maxTokens: Math.min(Number(maxTokens) || 16000, 16000),
     });
-    res.json({ ok: true, text });
+    const truncated = stopReason === "max_tokens";
+    if (truncated) console.warn("[/claude] reply hit max_tokens and was truncated", { model, promptLength: prompt.length });
+    res.json({ ok: true, text, truncated });
   } catch (err) {
     console.error("[/claude]", err.message);
     res.status(500).json({ ok: false, error: err.message });

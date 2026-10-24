@@ -620,7 +620,7 @@ function tagVariant(type) {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function callClaude(model, system, prompt, maxTokens = 8192) {
+async function callClaude(model, system, prompt, maxTokens = 16000) {
   const resp = await fetch('/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -632,17 +632,22 @@ async function callClaude(model, system, prompt, maxTokens = 8192) {
   }
   const data = await resp.json()
   if (!data.ok) throw new Error(data.error || 'Claude proxy error')
-  return data.text || ''
+  return { text: data.text || '', truncated: !!data.truncated }
 }
 
-// Retries once if safeJSON parse fails — catches transient formatting errors
-async function callClaudeJSON(model, system, prompt, maxTokens = 8192) {
-  const raw = await callClaude(model, system, prompt, maxTokens)
-  const parsed = safeJSON(raw)
+// Retries once if safeJSON parse fails — catches transient formatting errors.
+// A truncated reply (hit the output cap) is retried with a brevity instruction instead,
+// since repeating the same prompt would just overflow again.
+async function callClaudeJSON(model, system, prompt, maxTokens = 16000) {
+  const first = await callClaude(model, system, prompt, maxTokens)
+  const parsed = safeJSON(first.text)
   if (parsed) return parsed
-  // Retry once with an explicit reminder
-  const raw2 = await callClaude(model, system, prompt + '\n\nIMPORTANT: Your response must be valid JSON only. Begin with { and end with }.', maxTokens)
-  return safeJSON(raw2)
+  const reminder = first.truncated
+    ? '\n\nIMPORTANT: Your previous answer was too long and was cut off. Be concise: at most 12 findings, ' +
+      'short strings, no repetition. Your response must be valid JSON only. Begin with { and end with }.'
+    : '\n\nIMPORTANT: Your response must be valid JSON only. Begin with { and end with }.'
+  const second = await callClaude(model, system, prompt + reminder, maxTokens)
+  return safeJSON(second.text)
 }
 
 async function fetchPriorIntelligence(topic) {
