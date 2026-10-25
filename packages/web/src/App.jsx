@@ -1,7 +1,10 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import MyceliumCanvas from './MyceliumCanvas.jsx'
 import ConnectionsGraph from './ConnectionsGraph.jsx'
-import { emptyNetwork, mergeNetwork, networkContext, networkSynthesisInput } from './network.js'
+import {
+  emptyNetwork, mergeNetwork, networkContext, networkSynthesisInput,
+  networkSynopsis, networkIndex, filterSection, SECTION_DEFS,
+} from './network.js'
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -445,14 +448,6 @@ const S = {
     marginBottom: '10px',
   },
 
-  cardTitle: {
-    fontFamily: '"Orbitron", sans-serif',
-    fontSize: '13px',
-    color: C.cream,
-    letterSpacing: '0.08em',
-    marginBottom: '4px',
-  },
-
   tag: {
     display: 'inline-block',
     padding: '2px 9px',
@@ -556,10 +551,210 @@ const S = {
     lineHeight: 1.5,
   },
 
-  entityGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+  // ─── Collapsible, searchable sections ──────────────────────────────────────
+
+  disclosure: {
+    background: C.bgCard,
+    border: `1px solid ${C.border}`,
+    borderRadius: '8px',
+    marginBottom: '10px',
+    overflow: 'hidden',
+  },
+
+  disclosureHead: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
     gap: '10px',
+    padding: '13px 16px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '11px',
+    letterSpacing: '0.15em',
+    textTransform: 'uppercase',
+  },
+
+  disclosureCaret: {
+    fontSize: '11px',
+    width: '11px',
+    flexShrink: 0,
+  },
+
+  disclosureLabel: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  disclosureNote: {
+    fontFamily: '"Space Mono", monospace',
+    fontSize: '11px',
+    letterSpacing: 0,
+    textTransform: 'none',
+    color: C.dim,
+  },
+
+  disclosureBody: {
+    padding: '12px 16px 14px',
+    borderTop: `1px solid ${C.border}`,
+  },
+
+  filterInput: {
+    width: '100%',
+    background: C.bgMain,
+    border: `1px solid ${C.border}`,
+    borderRadius: '6px',
+    color: C.cream,
+    fontFamily: '"Space Mono", monospace',
+    fontSize: '13px',
+    padding: '8px 12px',
+    outline: 'none',
+    boxSizing: 'border-box',
+  },
+
+  filterMeta: {
+    fontSize: '11px',
+    color: C.dim,
+    margin: '9px 0 4px',
+    fontFamily: '"Space Mono", monospace',
+  },
+
+  emptyNote: {
+    fontSize: '12px',
+    color: C.warm,
+    padding: '8px 0 2px',
+    fontStyle: 'italic',
+  },
+
+  refRow: {
+    borderTop: `1px solid ${C.border}`,
+  },
+
+  refRowHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '9px 2px',
+    fontFamily: '"Space Mono", monospace',
+    fontSize: '13px',
+  },
+
+  refRowCaret: {
+    color: C.dim,
+    fontSize: '10px',
+    width: '10px',
+    flexShrink: 0,
+  },
+
+  refRowTitle: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  refRowMeta: {
+    flexShrink: 0,
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '11px',
+  },
+
+  refRowDetail: {
+    padding: '0 2px 12px 22px',
+  },
+
+  globalSearchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '12px',
+  },
+
+  matchRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '16px',
+  },
+
+  // ─── Case synopsis ─────────────────────────────────────────────────────────
+
+  synEntry: {
+    display: 'flex',
+    gap: '12px',
+    padding: '12px 0 14px',
+    borderTop: `1px solid ${C.border}`,
+  },
+
+  synOrdinal: {
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '11px',
+    color: C.violet,
+    flexShrink: 0,
+    width: '20px',
+    paddingTop: '2px',
+  },
+
+  synTopic: {
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '12px',
+    color: C.cream,
+    letterSpacing: '0.06em',
+    marginBottom: '5px',
+  },
+
+  synLine: {
+    fontSize: '12px',
+    color: C.dim,
+    lineHeight: 1.6,
+  },
+
+  synDelta: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    marginTop: '8px',
+    fontSize: '11px',
+    fontFamily: '"Orbitron", sans-serif',
+    letterSpacing: '0.06em',
+  },
+
+  synNames: {
+    fontSize: '11px',
+    color: C.warm,
+    marginTop: '6px',
+    lineHeight: 1.7,
+  },
+
+  synLink: {
+    fontSize: '11px',
+    color: C.amber,
+    marginTop: '5px',
+  },
+
+  synDate: {
+    fontSize: '11px',
+    color: C.warm,
+    flexShrink: 0,
+    fontFamily: '"Orbitron", sans-serif',
+    paddingTop: '2px',
+  },
+
+  synTotals: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '16px',
+    marginTop: '14px',
+    paddingTop: '13px',
+    borderTop: `1px solid ${C.violet}44`,
+    fontFamily: '"Orbitron", sans-serif',
+    fontSize: '11px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: C.amber,
   },
 
   footer: {
@@ -738,23 +933,164 @@ function PhaseStep({ num, label, active, done }) {
   )
 }
 
-function EntityCard({ entity }) {
+// A collapsible section. Collapsed by default so a long case stays one screen tall.
+function Disclosure({ label, count, note, accent = C.cream, open, onToggle, children }) {
+  return (
+    <div style={S.disclosure}>
+      <button type="button" style={S.disclosureHead} onClick={onToggle} aria-expanded={open}>
+        <span style={{ ...S.disclosureCaret, color: accent }}>{open ? '▾' : '▸'}</span>
+        <span style={{ ...S.disclosureLabel, color: accent }}>{label}</span>
+        {count != null && <span style={S.badge}>{count}</span>}
+        {note && <span style={S.disclosureNote}>{note}</span>}
+      </button>
+      {open && <div style={S.disclosureBody}>{children}</div>}
+    </div>
+  )
+}
+
+// One line per reference; click to expand that one in place. Nothing from the old
+// cards is lost — it just stays folded until asked for.
+function RefRow({ title, titleColor, meta, detail }) {
+  const [open, setOpen] = useState(false)
+  const expandable = Boolean(detail)
+  const toggle = () => expandable && setOpen(o => !o)
+  return (
+    <div style={S.refRow}>
+      <div
+        style={{ ...S.refRowHead, cursor: expandable ? 'pointer' : 'default' }}
+        onClick={toggle}
+        role={expandable ? 'button' : undefined}
+        tabIndex={expandable ? 0 : undefined}
+        aria-expanded={expandable ? open : undefined}
+        onKeyDown={e => {
+          if (expandable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle() }
+        }}
+      >
+        <span style={S.refRowCaret}>{expandable ? (open ? '▾' : '▸') : '·'}</span>
+        <span style={{ ...S.refRowTitle, color: titleColor || C.cream }}>{title}</span>
+        {meta}
+      </div>
+      {expandable && open && <div style={S.refRowDetail}>{detail}</div>}
+    </div>
+  )
+}
+
+// A searchable collection: its own filter bar over the shared reference index.
+function RefSection({ sectionKey, label, accent, entries, query, onQuery, open, onToggle, children }) {
+  const shown = useMemo(() => filterSection(entries, query), [entries, query])
+  if (!entries.length) return null
+  const q = query.trim()
+  return (
+    <Disclosure
+      label={label}
+      count={entries.length}
+      accent={accent}
+      open={open}
+      onToggle={onToggle}
+      note={q ? `${shown.length} matching` : null}
+    >
+      <input
+        style={S.filterInput}
+        value={query}
+        placeholder={`Search ${label.toLowerCase()}…`}
+        onChange={e => onQuery(sectionKey, e.target.value)}
+        aria-label={`Search ${label}`}
+      />
+      <div style={S.filterMeta}>
+        {q ? `${shown.length} of ${entries.length} match` :
+             `${entries.length} reference${entries.length === 1 ? '' : 's'}`}
+      </div>
+      {shown.length === 0
+        ? <div style={S.emptyNote}>Nothing in {label.toLowerCase()} matches “{q}”.</div>
+        : children(shown.map(e => e.item))}
+    </Disclosure>
+  )
+}
+
+function Delta({ n, label, color }) {
+  return (
+    <span style={{ color: n ? color : C.warm }}>
+      {n ? `+${n}` : '—'} {label}
+    </span>
+  )
+}
+
+const fmtDay = at => {
+  const d = new Date(Number(at) || 0)
+  return Number.isNaN(d.getTime()) || !at
+    ? ''
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+// The growing cliff notes: per search, what it was first to establish, derived from
+// the saved searches rather than stored, so it can never drift from the evidence.
+function CaseSynopsis({ synopsis, open, onToggle }) {
+  const { entries, totals } = synopsis
+  if (!entries.length) return null
+  return (
+    <Disclosure
+      label="Case synopsis"
+      accent={C.violet}
+      open={open}
+      onToggle={onToggle}
+      note={`${entries.length} search${entries.length === 1 ? '' : 'es'} · ${totals.entities} entities · ${totals.findings} findings`}
+    >
+      {entries.map(e => (
+        <div key={e.id} style={S.synEntry}>
+          <div style={S.synOrdinal}>{String(e.ordinal).padStart(2, '0')}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={S.synTopic}>{e.topic}</div>
+            <div style={S.synLine}>
+              {e.summary || (e.pending
+                ? 'Search still running — no brief yet.'
+                : 'No brief was synthesized for this search.')}
+            </div>
+            <div style={S.synDelta}>
+              <Delta n={e.added.entities.length} label="entities" color={C.amber} />
+              <Delta n={e.added.relationships}   label="links"    color={C.violet} />
+              <Delta n={e.added.findings}        label="findings" color={C.gold} />
+              <Delta n={e.added.timeline}        label="events"   color={C.purple} />
+            </div>
+            {e.added.entities.length > 0 && (
+              <div style={S.synNames}>
+                {e.added.entities.slice(0, 8).join(' · ')}
+                {e.added.entities.length > 8 ? ` · +${e.added.entities.length - 8} more` : ''}
+              </div>
+            )}
+            {e.reinforced.map(r => (
+              <div key={r.from} style={S.synLink}>
+                ↗ {r.count} {r.count === 1 ? 'entity' : 'entities'} also in search {String(r.from).padStart(2, '0')}
+              </div>
+            ))}
+          </div>
+          <div style={S.synDate}>{fmtDay(e.at)}</div>
+        </div>
+      ))}
+      <div style={S.synTotals}>
+        <span>Case total</span>
+        <span>{totals.entities} entities</span>
+        <span>{totals.relationships} links</span>
+        <span>{totals.findings} findings</span>
+        <span>{totals.timeline} events</span>
+      </div>
+    </Disclosure>
+  )
+}
+
+// ─── Reference detail bodies (folded out of a RefRow) ─────────────────────────
+
+// A row is only expandable when there is something folded inside it.
+const entityHasDetail = e => Boolean(
+  e.notes || e.aliases?.length || (e.foundIn?.length || 0) > 1 || Number(e.confidence ?? -1) >= 0,
+)
+const castHasDetail = c => Boolean(c.role || c.notes)
+
+function EntityDetail({ entity }) {
   const conf = Number(entity.confidence ?? -1)
   return (
-    <div style={S.card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-        <div style={S.cardTitle}>{entity.name}</div>
-        <span style={{ ...S.tag, ...tagVariant(entity.type) }}>{entity.type || 'entity'}</span>
-      </div>
-      {conf >= 0 && (
-        <div style={S.confBar}>
-          <div style={confFill(conf, confColor(conf))} />
-        </div>
-      )}
+    <div>
       {entity.notes && (
-        <div style={{ fontSize: '12px', color: C.dim, marginTop: '8px', lineHeight: 1.5 }}>
-          {entity.notes}
-        </div>
+        <div style={{ fontSize: '12px', color: C.dim, lineHeight: 1.6 }}>{entity.notes}</div>
       )}
       {entity.aliases?.length > 0 && (
         <div style={{ marginTop: '6px', fontSize: '11px', color: C.warm }}>
@@ -766,32 +1102,25 @@ function EntityCard({ entity }) {
           ↔ linked across: {entity.foundIn.join(' · ')}
         </div>
       )}
+      {conf >= 0 && (
+        <div style={S.confBar}>
+          <div style={confFill(conf, confColor(conf))} />
+        </div>
+      )}
     </div>
   )
 }
 
-function FindingCard({ finding, idx, showTopic }) {
+function FindingDetail({ finding, showTopic }) {
   const conf = Number(finding.confidence || 0)
   return (
-    <div style={{ ...S.card, borderLeft: `3px solid ${confColor(conf)}` }}>
+    <div>
+      <div style={{ fontSize: '13px', color: C.cream, lineHeight: 1.65 }}>{finding.claim}</div>
       {showTopic && finding.topic && (
-        <div style={{ fontSize: '10px', color: C.purple, marginBottom: '6px', letterSpacing: '0.1em' }}>
+        <div style={{ fontSize: '10px', color: C.purple, marginTop: '7px', letterSpacing: '0.1em' }}>
           from: {finding.topic}
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
-        <div style={{ fontSize: '13px', color: C.cream, lineHeight: 1.6, flex: 1 }}>
-          {idx != null && (
-            <span style={{ color: C.dim, marginRight: '8px', fontFamily: '"Orbitron", sans-serif', fontSize: '11px' }}>
-              {String(idx + 1).padStart(2, '0')}.
-            </span>
-          )}
-          {finding.claim}
-        </div>
-        <div style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '12px', color: confColor(conf), flexShrink: 0 }}>
-          {Math.round(conf * 100)}%
-        </div>
-      </div>
       {finding.date && (
         <div style={{ marginTop: '6px', fontSize: '11px', color: C.gold, fontFamily: '"Orbitron", sans-serif' }}>
           {finding.date}
@@ -811,17 +1140,17 @@ function FindingCard({ finding, idx, showTopic }) {
   )
 }
 
-function CastCard({ person }) {
+function CastDetail({ person }) {
+  if (!person.role && !person.notes) return null
   return (
-    <div style={S.card}>
-      <div style={S.cardTitle}>{person.name}</div>
+    <div>
       {person.role && (
-        <div style={{ fontSize: '11px', color: C.violet, marginTop: '4px', fontFamily: '"Orbitron", sans-serif', letterSpacing: '0.08em' }}>
+        <div style={{ fontSize: '11px', color: C.violet, fontFamily: '"Orbitron", sans-serif', letterSpacing: '0.08em' }}>
           {person.role}
         </div>
       )}
       {person.notes && (
-        <div style={{ fontSize: '12px', color: C.dim, marginTop: '8px', lineHeight: 1.5 }}>
+        <div style={{ fontSize: '12px', color: C.dim, marginTop: '7px', lineHeight: 1.6 }}>
           {person.notes}
         </div>
       )}
@@ -843,6 +1172,9 @@ export default function App() {
   const [error,        setError]        = useState('')
   const [statusMsg,    setStatusMsg]    = useState('')
   const [activeTab,    setActiveTab]    = useState('map')
+  const [openSections, setOpenSections] = useState(() => new Set(['synopsis']))
+  const [sectionQuery, setSectionQuery] = useState({})   // sectionKey -> its own filter
+  const [globalQuery,  setGlobalQuery]  = useState('')   // filters the whole case
   const [logoError,    setLogoError]    = useState(false)
   const networkRef = useRef(network)
   const runIdRef   = useRef(0) // bumped to cancel an in-flight search (clear / switch network)
@@ -886,6 +1218,56 @@ export default function App() {
   const merged  = useMemo(() => mergeNetwork(searches), [searches])
   const mapData = merged.map
   const resData = merged.res
+
+  // One derivation feeds both the growing synopsis and every section's search bar.
+  const synopsis = useMemo(() => networkSynopsis(searches), [searches])
+  const index    = useMemo(() => networkIndex(merged), [merged])
+
+  // A section's effective filter is its own if typed, otherwise the whole-case one.
+  const queryFor = useCallback(
+    key => sectionQuery[key] ?? globalQuery,
+    [sectionQuery, globalQuery],
+  )
+  const setQueryFor = useCallback(
+    (key, value) => setSectionQuery(prev => ({ ...prev, [key]: value })),
+    [],
+  )
+  const toggleSection = useCallback(key => setOpenSections(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  }), [])
+  const isOpen = useCallback(key => openSections.has(key), [openSections])
+
+  // Whole-case search: per-section hit counts, so a name can be found without
+  // knowing which collection holds it.
+  const globalHits = useMemo(() => {
+    const q = globalQuery.trim()
+    if (!q) return null
+    return SECTION_DEFS
+      .map(def => ({ def, count: filterSection(index[def.key], q).length }))
+      .filter(hit => hit.count > 0)
+  }, [globalQuery, index])
+
+  // Typing in the whole-case bar opens the sections that actually hold matches.
+  // Keyed on the query alone, deliberately: if it also watched the index, every
+  // merge during a running search would re-open a section the user just closed.
+  const indexRef = useRef(index)
+  useEffect(() => { indexRef.current = index }, [index])
+  useEffect(() => {
+    const q = globalQuery.trim()
+    if (!q) return
+    const hits = SECTION_DEFS
+      .filter(def => filterSection(indexRef.current[def.key], q).length > 0)
+      .map(def => def.key)
+    if (hits.length) setOpenSections(prev => new Set([...prev, ...hits]))
+  }, [globalQuery])
+
+  const onGlobalQuery = useCallback(value => {
+    setGlobalQuery(value)
+    setSectionQuery({})   // a new whole-case query supersedes per-section filters
+  }, [])
 
   const briefs = searches.filter(s => s.synth)
   const synthData =
@@ -1296,6 +1678,53 @@ export default function App() {
             {/* ── Results ───────────────────────────────────────────────── */}
             {hasResults && (
               <>
+                {/* Growing case synopsis — the running cliff notes, above every tab */}
+                <CaseSynopsis
+                  synopsis={synopsis}
+                  open={isOpen('synopsis')}
+                  onToggle={() => toggleSection('synopsis')}
+                />
+
+                {/* Whole-case search — finds a reference without knowing its section */}
+                <div style={S.globalSearchRow}>
+                  <input
+                    style={{ ...S.filterInput, flex: 1 }}
+                    value={globalQuery}
+                    placeholder="Search the whole case — names, claims, dates, places…"
+                    onChange={e => onGlobalQuery(e.target.value)}
+                    aria-label="Search the whole case"
+                  />
+                  {globalQuery.trim() && (
+                    <button type="button" style={S.btnGhost} onClick={() => onGlobalQuery('')}>
+                      clear
+                    </button>
+                  )}
+                </div>
+                {globalHits && (
+                  <div style={S.matchRow}>
+                    {globalHits.length === 0 ? (
+                      <span style={S.emptyNote}>
+                        No reference in this case matches “{globalQuery.trim()}”.
+                      </span>
+                    ) : globalHits.map(({ def, count }) => (
+                      <button
+                        key={def.key}
+                        type="button"
+                        style={{
+                          ...S.btnGhost,
+                          ...(activeTab === def.tab ? { borderColor: C.violet, color: C.violet } : {}),
+                        }}
+                        onClick={() => {
+                          setActiveTab(def.tab)
+                          setOpenSections(prev => new Set([...prev, def.key]))
+                        }}
+                      >
+                        {def.label} <span style={S.badge}>{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Tab bar */}
                 <div style={S.tabs}>
                   {TABS.map(t => (
@@ -1317,129 +1746,171 @@ export default function App() {
                 {/* ── MAP tab ─────────────────────────────────────────── */}
                 {activeTab === 'map' && mapData && (
                   <div>
-                    {/* Entities */}
-                    {mapData.entities?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>
-                          Entities <span style={S.badge}>{mapData.entities.length}</span>
-                        </div>
-                        <div style={S.entityGrid}>
-                          {mapData.entities.map((e, i) => <EntityCard key={i} entity={e} />)}
-                        </div>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="mapEntities" label="Entities"
+                      entries={index.mapEntities}
+                      query={queryFor('mapEntities')} onQuery={setQueryFor}
+                      open={isOpen('mapEntities')} onToggle={() => toggleSection('mapEntities')}
+                    >
+                      {items => items.map(e => (
+                        <RefRow
+                          key={e.name}
+                          title={e.name}
+                          meta={
+                            <>
+                              <span style={{ ...S.tag, ...tagVariant(e.type) }}>{e.type || 'entity'}</span>
+                              {Number(e.confidence ?? -1) >= 0 && (
+                                <span style={{ ...S.refRowMeta, color: confColor(Number(e.confidence)) }}>
+                                  {Math.round(Number(e.confidence) * 100)}%
+                                </span>
+                              )}
+                            </>
+                          }
+                          detail={entityHasDetail(e) ? <EntityDetail entity={e} /> : null}
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Relationships */}
-                    {mapData.relationships?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>
-                          Relationships <span style={S.badge}>{mapData.relationships.length}</span>
-                        </div>
-                        {mapData.relationships.map((r, i) => (
-                          <div key={i} style={{ ...S.card, display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px' }}>
-                            <span style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '12px', color: C.cream }}>{r.from}</span>
-                            <span style={{ color: C.amber, fontSize: '11px', fontFamily: '"Space Mono", monospace' }}>— {r.relation} →</span>
-                            <span style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '12px', color: C.cream }}>{r.to}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="relationships" label="Relationships"
+                      entries={index.relationships}
+                      query={queryFor('relationships')} onQuery={setQueryFor}
+                      open={isOpen('relationships')} onToggle={() => toggleSection('relationships')}
+                    >
+                      {items => items.map(r => (
+                        <RefRow
+                          key={`${r.from}|${r.relation}|${r.to}`}
+                          title={
+                            <>
+                              {r.from}
+                              <span style={{ color: C.amber, fontSize: '11px' }}> — {r.relation} → </span>
+                              {r.to}
+                            </>
+                          }
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Timeline */}
-                    {mapData.timeline?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Timeline</div>
-                        <div style={{ borderLeft: `2px solid ${C.border}`, paddingLeft: '24px' }}>
-                          {mapData.timeline.map((t, i) => (
-                            <div key={i} style={{ display: 'flex', gap: '14px', marginBottom: '14px', position: 'relative' }}>
-                              <div style={S.timelineDot} />
-                              <div style={S.timelineDate}>{t.date}</div>
-                              <div style={S.timelineEvent}>{t.event}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="timeline" label="Timeline"
+                      accent={C.gold}
+                      entries={index.timeline}
+                      query={queryFor('timeline')} onQuery={setQueryFor}
+                      open={isOpen('timeline')} onToggle={() => toggleSection('timeline')}
+                    >
+                      {items => items.map(t => (
+                        <RefRow
+                          key={`${t.date}|${t.event}`}
+                          title={t.event}
+                          meta={<span style={{ ...S.refRowMeta, color: C.gold }}>{t.date}</span>}
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Search vectors */}
-                    {mapData.searchVectors?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Search Vectors</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                          {mapData.searchVectors.map((v, i) => (
-                            <span key={i} style={{ ...S.tag, ...S.tagDocument, fontSize: '12px', padding: '5px 14px' }}>
-                              {v}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="searchVectors" label="Search Vectors"
+                      entries={index.searchVectors}
+                      query={queryFor('searchVectors')} onQuery={setQueryFor}
+                      open={isOpen('searchVectors')} onToggle={() => toggleSection('searchVectors')}
+                    >
+                      {items => items.map(v => <RefRow key={v} title={v} />)}
+                    </RefSection>
                   </div>
                 )}
 
                 {/* ── RESEARCH tab ─────────────────────────────────────── */}
                 {activeTab === 'res' && resData && (
                   <div>
-                    {/* Findings */}
-                    {resData.findings?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>
-                          Findings <span style={S.badge}>{resData.findings.length}</span>
-                        </div>
-                        {resData.findings.map((f, i) => (
-                          <FindingCard key={i} finding={f} idx={i} showTopic={multiSearch} />
-                        ))}
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="findings" label="Findings"
+                      entries={index.findings}
+                      query={queryFor('findings')} onQuery={setQueryFor}
+                      open={isOpen('findings')} onToggle={() => toggleSection('findings')}
+                    >
+                      {items => items.map(f => {
+                        const conf = Number(f.confidence || 0)
+                        return (
+                          <RefRow
+                            key={f.claim}
+                            title={f.claim}
+                            meta={<span style={{ ...S.refRowMeta, color: confColor(conf) }}>
+                              {Math.round(conf * 100)}%
+                            </span>}
+                            detail={<FindingDetail finding={f} showTopic={multiSearch} />}
+                          />
+                        )
+                      })}
+                    </RefSection>
 
-                    {/* Resolved entities */}
-                    {resData.entities?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>
-                          Resolved Entities <span style={S.badge}>{resData.entities.length}</span>
-                        </div>
-                        <div style={S.entityGrid}>
-                          {resData.entities.map((e, i) => <EntityCard key={i} entity={e} />)}
-                        </div>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="resEntities" label="Resolved Entities"
+                      entries={index.resEntities}
+                      query={queryFor('resEntities')} onQuery={setQueryFor}
+                      open={isOpen('resEntities')} onToggle={() => toggleSection('resEntities')}
+                    >
+                      {items => items.map(e => (
+                        <RefRow
+                          key={e.name}
+                          title={e.name}
+                          meta={
+                            <>
+                              <span style={{ ...S.tag, ...tagVariant(e.type) }}>{e.type || 'entity'}</span>
+                              {Number(e.confidence ?? -1) >= 0 && (
+                                <span style={{ ...S.refRowMeta, color: confColor(Number(e.confidence)) }}>
+                                  {Math.round(Number(e.confidence) * 100)}%
+                                </span>
+                              )}
+                            </>
+                          }
+                          detail={entityHasDetail(e) ? <EntityDetail entity={e} /> : null}
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Inconsistencies */}
-                    {resData.inconsistencies?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={{ ...S.resultHeader, color: C.red }}>
-                          ⚠ Inconsistencies <span style={S.badge}>{resData.inconsistencies.length}</span>
-                        </div>
-                        {resData.inconsistencies.map((inc, i) => (
-                          <div key={i} style={{ ...S.card, borderLeft: `3px solid ${C.red}` }}>
-                            <div style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '12px', color: C.cream, marginBottom: '5px' }}>
-                              {inc.entity}
+                    <RefSection
+                      sectionKey="inconsistencies" label="Inconsistencies"
+                      accent={C.red}
+                      entries={index.inconsistencies}
+                      query={queryFor('inconsistencies')} onQuery={setQueryFor}
+                      open={isOpen('inconsistencies')} onToggle={() => toggleSection('inconsistencies')}
+                    >
+                      {items => items.map(inc => (
+                        <RefRow
+                          key={`${inc.entity}|${inc.detail}`}
+                          title={inc.entity}
+                          titleColor={C.cream}
+                          detail={
+                            <div>
+                              <div style={{ fontSize: '13px', color: C.dim, lineHeight: 1.6 }}>{inc.detail}</div>
+                              {inc.citations?.length > 0 && (
+                                <div style={{ marginTop: '8px', fontSize: '11px', color: C.warm }}>
+                                  {inc.citations.join(' · ')}
+                                </div>
+                              )}
                             </div>
-                            <div style={{ fontSize: '13px', color: C.dim }}>{inc.detail}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                          }
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Evidence gaps */}
-                    {resData.gaps?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Evidence Gaps</div>
-                        <ul style={{ color: C.dim, fontSize: '13px', paddingLeft: '20px', lineHeight: 2.2 }}>
-                          {resData.gaps.map((g, i) => <li key={i}>{g}</li>)}
-                        </ul>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="gaps" label="Evidence Gaps"
+                      entries={index.gaps}
+                      query={queryFor('gaps')} onQuery={setQueryFor}
+                      open={isOpen('gaps')} onToggle={() => toggleSection('gaps')}
+                    >
+                      {items => items.map(g => <RefRow key={g} title={g} titleColor={C.dim} />)}
+                    </RefSection>
 
-                    {/* Corroborated */}
-                    {resData.corroborated?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={{ ...S.resultHeader, color: C.amber }}>✓ Corroborated</div>
-                        <ul style={{ color: C.cream, fontSize: '13px', paddingLeft: '20px', lineHeight: 2.2 }}>
-                          {resData.corroborated.map((c, i) => <li key={i}>{c}</li>)}
-                        </ul>
-                      </div>
-                    )}
+                    <RefSection
+                      sectionKey="corroborated" label="Corroborated"
+                      accent={C.amber}
+                      entries={index.corroborated}
+                      query={queryFor('corroborated')} onQuery={setQueryFor}
+                      open={isOpen('corroborated')} onToggle={() => toggleSection('corroborated')}
+                    >
+                      {items => items.map(c => <RefRow key={c} title={c} />)}
+                    </RefSection>
                   </div>
                 )}
 
@@ -1466,46 +1937,56 @@ export default function App() {
 
                 {/* ── SYNTHESIS tab ─────────────────────────────────────── */}
                 {activeTab === 'synth' && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '20px' }}>
-                    {briefs.map((s, i) => {
-                      const selected = briefChoice === s.id || (briefChoice == null && i === briefs.length - 1)
-                      return (
+                  <Disclosure
+                    label="Briefs"
+                    accent={C.violet}
+                    open={isOpen('briefs')}
+                    onToggle={() => toggleSection('briefs')}
+                    note={briefChoice === 'network'
+                      ? 'reading: network brief'
+                      : `reading: ${(synthData && briefs.find(b => b.synth === synthData)?.topic) || 'latest'}`}
+                  >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                      {briefs.map((s, i) => {
+                        const selected = briefChoice === s.id || (briefChoice == null && i === briefs.length - 1)
+                        return (
+                          <button
+                            key={s.id}
+                            style={{ ...S.btnGhost, ...(selected ? { background: `${C.amber}22`, borderColor: C.amber } : {}) }}
+                            onClick={() => setBriefChoice(s.id)}
+                            title={s.topic}
+                          >
+                            {String(i + 1).padStart(2, '0')} · {s.topic.length > 40 ? `${s.topic.slice(0, 40)}…` : s.topic}
+                          </button>
+                        )
+                      })}
+                      {network.networkBrief && (
                         <button
-                          key={s.id}
-                          style={{ ...S.btnGhost, ...(selected ? { background: `${C.amber}22`, borderColor: C.amber } : {}) }}
-                          onClick={() => setBriefChoice(s.id)}
-                          title={s.topic}
+                          style={{ ...S.btnGhost, color: C.violet, borderColor: `${C.violet}66`,
+                                   ...(briefChoice === 'network' ? { background: `${C.violet}22`, borderColor: C.violet } : {}) }}
+                          onClick={() => setBriefChoice('network')}
                         >
-                          {String(i + 1).padStart(2, '0')} · {s.topic.length > 40 ? `${s.topic.slice(0, 40)}…` : s.topic}
+                          ◈ Network brief ({network.networkBrief.searchCount} searches)
                         </button>
-                      )
-                    })}
-                    {network.networkBrief && (
-                      <button
-                        style={{ ...S.btnGhost, color: C.violet, borderColor: `${C.violet}66`,
-                                 ...(briefChoice === 'network' ? { background: `${C.violet}22`, borderColor: C.violet } : {}) }}
-                        onClick={() => setBriefChoice('network')}
-                      >
-                        ◈ Network brief ({network.networkBrief.searchCount} searches)
-                      </button>
-                    )}
-                    {network.searches.length >= 2 && (
-                      <button
-                        style={{ ...S.btnGhost, color: C.violet, borderColor: `${C.violet}66` }}
-                        onClick={synthesizeNetwork}
-                        disabled={netBusy || isActive}
-                      >
-                        {netBusy ? '… synthesizing network' : network.networkBrief ? '↻ Re-synthesize network' : '◈ Synthesize network'}
-                      </button>
-                    )}
-                  </div>
+                      )}
+                      {network.searches.length >= 2 && (
+                        <button
+                          style={{ ...S.btnGhost, color: C.violet, borderColor: `${C.violet}66` }}
+                          onClick={synthesizeNetwork}
+                          disabled={netBusy || isActive}
+                        >
+                          {netBusy ? '… synthesizing network' : network.networkBrief ? '↻ Re-synthesize network' : '◈ Synthesize network'}
+                        </button>
+                      )}
+                    </div>
+                  </Disclosure>
                 )}
 
                 {activeTab === 'synth' && synthData && (
                   <div>
-                    {/* Summary card */}
+                    {/* Summary stays open — it is the headline of the brief */}
                     {synthData.summary && (
-                      <div style={{ ...S.card, background: C.bgPanel, borderColor: `${C.violet}55`, marginBottom: '22px' }}>
+                      <div style={{ ...S.card, background: C.bgPanel, borderColor: `${C.violet}55`, marginBottom: '14px' }}>
                         <div style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '10px', color: C.violet, letterSpacing: '0.2em', marginBottom: '10px' }}>
                           INTELLIGENCE SUMMARY
                         </div>
@@ -1528,22 +2009,24 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Key findings */}
                     {synthData.keyFindings?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Key Findings</div>
-                        <ol style={{ color: C.cream, fontSize: '13px', paddingLeft: '22px', lineHeight: 2.1 }}>
+                      <Disclosure
+                        label="Key Findings" count={synthData.keyFindings.length}
+                        open={isOpen('keyFindings')} onToggle={() => toggleSection('keyFindings')}
+                      >
+                        <ol style={{ color: C.cream, fontSize: '13px', paddingLeft: '22px', lineHeight: 2.1, margin: 0 }}>
                           {synthData.keyFindings.map((f, i) => (
                             <li key={i} style={{ marginBottom: '8px' }}>{f}</li>
                           ))}
                         </ol>
-                      </div>
+                      </Disclosure>
                     )}
 
-                    {/* Verified timeline */}
                     {synthData.timeline?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Verified Timeline</div>
+                      <Disclosure
+                        label="Verified Timeline" count={synthData.timeline.length} accent={C.gold}
+                        open={isOpen('verifiedTimeline')} onToggle={() => toggleSection('verifiedTimeline')}
+                      >
                         <div style={{ borderLeft: `2px solid ${C.amber}44`, paddingLeft: '24px' }}>
                           {synthData.timeline.map((t, i) => (
                             <div key={i} style={{ display: 'flex', gap: '14px', marginBottom: '18px', position: 'relative' }}>
@@ -1560,57 +2043,68 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </Disclosure>
                     )}
 
-                    {/* Cast */}
-                    {synthData.cast?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>
-                          Cast <span style={S.badge}>{synthData.cast.length}</span>
-                        </div>
-                        <div style={S.entityGrid}>
-                          {synthData.cast.map((c, i) => <CastCard key={i} person={c} />)}
-                        </div>
-                      </div>
-                    )}
+                    {/* Cast is the case roster: merged across searches, like entities */}
+                    <RefSection
+                      sectionKey="cast" label="Cast"
+                      entries={index.cast}
+                      query={queryFor('cast')} onQuery={setQueryFor}
+                      open={isOpen('cast')} onToggle={() => toggleSection('cast')}
+                    >
+                      {items => items.map(c => (
+                        <RefRow
+                          key={c.name}
+                          title={c.name}
+                          meta={c.role
+                            ? <span style={{ ...S.refRowMeta, color: C.violet }}>{c.role}</span>
+                            : null}
+                          detail={castHasDetail(c) ? <CastDetail person={c} /> : null}
+                        />
+                      ))}
+                    </RefSection>
 
-                    {/* Subplots */}
                     {synthData.subplots?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Sub-plots</div>
-                        <ul style={{ color: C.dim, fontSize: '13px', paddingLeft: '20px', lineHeight: 2.2 }}>
+                      <Disclosure
+                        label="Sub-plots" count={synthData.subplots.length}
+                        open={isOpen('subplots')} onToggle={() => toggleSection('subplots')}
+                      >
+                        <ul style={{ color: C.dim, fontSize: '13px', paddingLeft: '20px', lineHeight: 2.2, margin: 0 }}>
                           {synthData.subplots.map((s, i) => <li key={i}>{s}</li>)}
                         </ul>
-                      </div>
+                      </Disclosure>
                     )}
 
-                    {/* Inconsistencies */}
                     {synthData.inconsistencies?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={{ ...S.resultHeader, color: C.red }}>
-                          ⚠ Unresolved Inconsistencies
-                        </div>
+                      <Disclosure
+                        label="Unresolved Inconsistencies" count={synthData.inconsistencies.length} accent={C.red}
+                        open={isOpen('synthInconsistencies')} onToggle={() => toggleSection('synthInconsistencies')}
+                      >
                         {synthData.inconsistencies.map((inc, i) => (
-                          <div key={i} style={{ ...S.card, borderLeft: `3px solid ${C.red}` }}>
-                            <div style={{ fontFamily: '"Orbitron", sans-serif', fontSize: '12px', color: C.cream, marginBottom: '5px' }}>
-                              {inc.entity}
-                            </div>
-                            <div style={{ fontSize: '13px', color: C.dim }}>{inc.detail}</div>
-                            {inc.citations?.length > 0 && (
-                              <div style={{ marginTop: '8px', fontSize: '11px', color: C.warm }}>
-                                {inc.citations.join(' · ')}
+                          <RefRow
+                            key={`${inc.entity}|${i}`}
+                            title={inc.entity}
+                            detail={
+                              <div>
+                                <div style={{ fontSize: '13px', color: C.dim, lineHeight: 1.6 }}>{inc.detail}</div>
+                                {inc.citations?.length > 0 && (
+                                  <div style={{ marginTop: '8px', fontSize: '11px', color: C.warm }}>
+                                    {inc.citations.join(' · ')}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
+                            }
+                          />
                         ))}
-                      </div>
+                      </Disclosure>
                     )}
 
-                    {/* Follow-up directives */}
                     {synthData.followUpDirectives?.length > 0 && (
-                      <div style={S.resultSection}>
-                        <div style={S.resultHeader}>Follow-up Directives</div>
+                      <Disclosure
+                        label="Follow-up Directives" count={synthData.followUpDirectives.length} accent={C.amber}
+                        open={isOpen('followUps')} onToggle={() => toggleSection('followUps')}
+                      >
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                           {synthData.followUpDirectives.map((d, i) => (
                             <button key={i} style={S.btnGhost} onClick={() => handleFollowUp(d)}>
@@ -1618,7 +2112,7 @@ export default function App() {
                             </button>
                           ))}
                         </div>
-                      </div>
+                      </Disclosure>
                     )}
                   </div>
                 )}
