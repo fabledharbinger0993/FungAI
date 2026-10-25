@@ -175,11 +175,27 @@ Models used:
 - GEC-Marconi SDI scientist deaths 1982–1990
 - COINTELPRO
 
-## Out of scope (this session)
+## Deployment (Railway)
 
-- Deployment config (render.yaml, railway.json)
+FungAI is deployed on Railway: project `fungai`, environment `production`, services
+`web` (Node, repo root, redeploys on every push to `main`), `memory`
+(FastAPI + ChromaDB, root `/packages/memory`, redeploys only on changes under that
+path) and `Postgres`. Public at https://fungai.app, gated server-side by
+`SITE_PASSWORD` — only `/health` and `/auth/*` are public.
+
+For any Railway work — IDs, deploy and log lookups, variable changes, the
+`railway.toml`-vs-live-config trap, and the confirmation rules for destructive
+actions — use the `railway-fungai` skill in `.claude/skills/`. Note that the root
+`railway.toml` is stale: it says `nixpacks`, but both services build with RAILPACK
+configured in the dashboard, which is the source of truth.
+
+Postgres note: FungAI's tables live in a dedicated `fungai` schema. Never write to
+the `public` schema — it holds a foreign `sessions` table of unknown provenance.
+
+## Out of scope (frontend design work)
+
 - Connections graph visualization
-- Auth, rate limiting, user accounts
+- Rate limiting, per-user accounts (site-wide password auth exists; per-user does not)
 - New backend routes
 
 ## Style object conventions

@@ -36,3 +36,6 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+
+# Claude Code local config, ops notes, and permissions (public repo — keep untracked)
+.claude/
