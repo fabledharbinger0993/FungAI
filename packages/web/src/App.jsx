@@ -1924,14 +1924,9 @@ export default function App() {
                       </span>
                     </div>
                     <div style={{ fontSize: '11px', color: C.dim, marginBottom: '12px', fontFamily: '"Space Mono", monospace' }}>
-                      Drag nodes · scroll to zoom · solid = mapped · dashed = co-occurrence · dim/dashed = recalled from memory
+                      Each ring is one search, oldest in the middle · scroll to zoom · click a node or branch for detail · thick = well supported · flashing = new this search
                     </div>
-                    <ConnectionsGraph
-                      mapData={mapData}
-                      resData={resData}
-                      synthData={merged.synth}
-                      memoryData={memoryData}
-                    />
+                    <ConnectionsGraph searches={searches} memoryData={memoryData} />
                   </div>
                 )}
 
