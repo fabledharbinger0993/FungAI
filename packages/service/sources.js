@@ -16,7 +16,10 @@ export const DEFAULT_ARCHIVAL_SOURCES = {
   ciaCrest: {
     id: "ciaCrest",
     name: "CIA CREST Reading Room",
-    enabledByDefault: true,
+    enabledByDefault: false,
+    // cia.gov/robots.txt disallows /readingroom/search/ for crawlers (and asks for a 10 s delay),
+    // so FungAI never queries it. Document pages (/readingroom/document/…) can be crawled by URL.
+    manualOnly: "robots.txt disallows crawling /readingroom/search/; fetch document URLs via Deep Crawl",
     domain: "cia.gov",
     searchUrlPattern: "https://www.cia.gov/readingroom/search/site/{query}",
     selectors: {

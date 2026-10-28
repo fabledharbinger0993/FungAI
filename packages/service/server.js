@@ -42,8 +42,12 @@ import { DEFAULT_ARCHIVAL_SOURCES, buildSearchUrl, mergeSourceConfig } from "./s
 import { OLLAMA_PROMPTS, cleanJsonResponse } from "./prompts.js";
 import {
   CaptchaDetectedError,
+  ContactRequiredError,
+  DailyCapError,
   PermanentHttpError,
   RetryableHttpError,
+  RobotsBlockedError,
+  RobotsUnavailableError,
   policyFetch,
   resumeDomain
 } from "./crawlpolicy.js";
@@ -404,6 +408,12 @@ async function runSearchPipeline(session, selectedSources, settings, payload, pa
     const documents = [];
 
     for (const source of selectedSources) {
+      // Some sites disallow bots on their search pages; their documents are fetched by URL instead.
+      if (source.manualOnly) {
+        console.warn(`[fungai] ${source.name}: ${source.manualOnly}`);
+        updateJob(session.id, `${source.name}: search pages are off-limits to crawlers; use Deep Crawl with document URLs`);
+        continue;
+      }
       const searchUrl = buildSearchUrl(source, payload.subject, payload.contextCue || "");
       const hits = await crawlFromUrl({
         session, seedUrl: searchUrl, source,
@@ -624,6 +634,26 @@ async function fetchWithRetries(url, maxRetries, settings, parentSpan) {
         addSpanEvent(parentSpan, "fetch.result", { "url.full": url, status: "ACCESS_DENIED" });
         return { ok: false, status: "ACCESS_DENIED" };
       }
+      // Policy refusals are final: retrying cannot change the answer.
+      if (error instanceof RobotsBlockedError) {
+        addSpanEvent(parentSpan, "fetch.result", { "url.full": url, status: "ROBOTS_BLOCKED" });
+        return { ok: false, status: "ROBOTS_BLOCKED" };
+      }
+      if (error instanceof ContactRequiredError) {
+        console.warn(`[fungai] ${error.message}`);
+        return { ok: false, status: "CONTACT_REQUIRED" };
+      }
+      if (error instanceof DailyCapError) {
+        console.warn(`[fungai] ${error.message}`);
+        return { ok: false, status: "DAILY_CAP" };
+      }
+      if (error instanceof RobotsUnavailableError) {
+        console.warn(`[fungai] ${error.message}`);
+        if (attempt >= maxRetries) return { ok: false, status: "ROBOTS_UNAVAILABLE" };
+        await sleep(5000 * Math.pow(2, attempt));
+        attempt++;
+        continue;
+      }
       if (error instanceof RetryableHttpError) {
         if (attempt >= Math.min(maxRetries, error.maxRetries || maxRetries)) {
           return { ok: false, status: `HTTP_${error.status}` };
@@ -777,6 +807,7 @@ async function listSessions(query) {
 // Required env var: ANTHROPIC_API_KEY
 // Optional:        fungai_MODEL (default: claude-haiku-4-5-20251001 — fast + cheap for bulk extraction)
 //                  fungai_SYNTH_MODEL (default: claude-sonnet-4-6 — for context brief + tribunal)
+//                  fungai_CONTACT_EMAIL (real address put in the crawler's User-Agent; required before .gov/.mil crawls)
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const EXTRACT_MODEL = process.env.fungai_MODEL       || "claude-haiku-4-5-20251001";

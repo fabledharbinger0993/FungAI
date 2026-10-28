@@ -1,142 +1,121 @@
 import { get, put } from "./db.js";
+import {
+  parseRobotsTxt,
+  pickRule,
+  isPathBlocked,
+  parseRetryAfter,
+  isPlaceholderContact,
+  isGovDomain,
+  effectiveDelaySeconds
+} from "./robots.js";
+
+export { parseRobotsTxt };
 
 const domainQueues = new Map();
 const domainNextAt = new Map();
 const domainPaused = new Map();
 
-export async function isAllowedByRobots(url, userAgent = "*") {
-  const target = new URL(url);
-  const key = `robots:${target.origin}`;
-  let cached = await get("crawlCache", key);
+const ROBOTS_AGENT = "archivelens";
+const ROBOTS_TTL_MS = 24 * 60 * 60 * 1000;      // re-read robots.txt daily
+const ROBOTS_DENIED_TTL_MS = 60 * 60 * 1000;    // a 401/403 on robots.txt is re-checked hourly
+const DEFAULT_DAILY_CAP_GOV = 300;
+const DEFAULT_DAILY_CAP = 2000;
 
-  if (!cached) {
-    const robotsUrl = `${target.origin}/robots.txt`;
-    let body = "";
+function contactFor(settings) {
+  const candidates = [settings.contactEmail, process.env.fungai_CONTACT_EMAIL];
+  return candidates.find((c) => !isPlaceholderContact(c)) || "";
+}
+
+function userAgentFor(contact) {
+  return `ArchiveLens/1.0 (Research Extension; respectful crawl; contact: ${contact || "unset"})`;
+}
+
+// Returns { allowed, crawlDelay } for a URL. Throws RobotsUnavailableError when robots.txt
+// could not be read (server error / network), rather than assuming everything is allowed.
+export async function getRobotsInfo(url, userAgent = ROBOTS_AGENT, contact = "") {
+  const target = new URL(url);
+  const key = `robots2:${target.origin}`;
+  let cached = await get("crawlCache", key);
+  const ttl = cached?.denied ? ROBOTS_DENIED_TTL_MS : ROBOTS_TTL_MS;
+
+  if (!cached || Date.now() - (cached.fetchedAt || 0) > ttl) {
+    let res;
     try {
-      const res = await fetch(robotsUrl, { method: "GET", credentials: "omit", cache: "no-store" });
-      if (res.ok) {
-        body = await res.text();
-      }
-    } catch (_err) {
-      body = "";
+      res = await fetch(`${target.origin}/robots.txt`, {
+        method: "GET",
+        headers: { "User-Agent": userAgentFor(contact) },
+        credentials: "omit",
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000)
+      });
+    } catch (err) {
+      throw new RobotsUnavailableError(`Could not read robots.txt for ${target.origin}: ${err.message}`);
     }
 
-    cached = {
-      key,
-      parsed: parseRobotsTxt(body),
-      fetchedAt: Date.now()
-    };
+    if (res.status >= 500) {
+      throw new RobotsUnavailableError(`robots.txt for ${target.origin} returned ${res.status}`);
+    }
+    if (res.status === 401 || res.status === 403) {
+      // The site refuses to show its rules to us: treat that as "stay out".
+      cached = { key, parsed: {}, denied: true, fetchedAt: Date.now() };
+    } else {
+      const body = res.ok ? await res.text() : ""; // 404/410: no robots.txt, no restrictions
+      cached = { key, parsed: parseRobotsTxt(body), denied: false, fetchedAt: Date.now() };
+    }
     await put("crawlCache", cached);
   }
 
-  const path = target.pathname || "/";
-  const parsed = cached.parsed || {};
-  return !isPathBlocked(path, parsed, userAgent);
+  if (cached.denied) return { allowed: false, crawlDelay: null };
+
+  const rule = pickRule(cached.parsed, [String(userAgent).toLowerCase(), ROBOTS_AGENT, "fungai"]);
+  const targetPath = `${target.pathname || "/"}${target.search || ""}`;
+  return { allowed: !isPathBlocked(targetPath, rule), crawlDelay: rule?.crawlDelay ?? null };
 }
 
-export function parseRobotsTxt(text) {
-  const rules = {};
-  let currentAgents = ["*"];
-
-  const lines = (text || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
-
-  for (const line of lines) {
-    const parts = line.split(":");
-    if (parts.length < 2) {
-      continue;
-    }
-
-    const directive = parts[0].trim().toLowerCase();
-    const value = parts.slice(1).join(":").trim();
-
-    if (directive === "user-agent") {
-      const agent = value.toLowerCase() || "*";
-      currentAgents = [agent];
-      if (!rules[agent]) {
-        rules[agent] = { allow: [], disallow: [] };
-      }
-      continue;
-    }
-
-    for (const agent of currentAgents) {
-      if (!rules[agent]) {
-        rules[agent] = { allow: [], disallow: [] };
-      }
-      if (directive === "allow") {
-        rules[agent].allow.push(value);
-      } else if (directive === "disallow") {
-        rules[agent].disallow.push(value);
-      }
-    }
-  }
-
-  return rules;
+export async function isAllowedByRobots(url, userAgent = ROBOTS_AGENT) {
+  return (await getRobotsInfo(url, userAgent)).allowed;
 }
 
-function isPathBlocked(path, parsed, userAgent) {
-  const normalizedAgent = (userAgent || "*").toLowerCase();
-  const candidates = [normalizedAgent, "archivelens", "*"];
-
-  for (const agent of candidates) {
-    const rule = parsed[agent];
-    if (!rule) {
-      continue;
-    }
-
-    const allowed = longestMatch(path, rule.allow || []);
-    const blocked = longestMatch(path, rule.disallow || []);
-
-    if (blocked && (!allowed || blocked.length > allowed.length)) {
-      return true;
-    }
+// Counts requests per domain per UTC day (persisted, so restarts don't reset it).
+async function takeDailyRequest(domain, settings) {
+  const cap = Number(settings.dailyRequestCap) || (isGovDomain(domain) ? DEFAULT_DAILY_CAP_GOV : DEFAULT_DAILY_CAP);
+  const key = `daily:${domain}:${new Date().toISOString().slice(0, 10)}`;
+  const row = (await get("crawlCache", key)) || { key, count: 0 };
+  if (row.count >= cap) {
+    throw new DailyCapError(`Daily request cap (${cap}) reached for ${domain}; resumes tomorrow (UTC)`);
   }
-
-  return false;
-}
-
-function longestMatch(path, patterns) {
-  let best = "";
-  for (const pattern of patterns) {
-    if (!pattern) {
-      continue;
-    }
-    const escaped = pattern
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/\\\*/g, ".*");
-    const re = new RegExp(`^${escaped}`);
-    if (re.test(path) && pattern.length > best.length) {
-      best = pattern;
-    }
-  }
-  return best;
+  row.count += 1;
+  await put("crawlCache", row);
 }
 
 export async function policyFetch(url, options = {}, settings = {}) {
   const target = new URL(url);
   const domain = target.hostname;
-  const minDelay = effectiveDelaySeconds(domain, settings.crawlDelaySeconds || 3) * 1000;
+  const contact = contactFor(settings);
+
+  // Government sites get a real, reachable contact in the User-Agent or no request at all.
+  if (isGovDomain(domain) && !contact) {
+    throw new ContactRequiredError(
+      `Set a real contact email (Settings → contactEmail, or the fungai_CONTACT_EMAIL variable) before crawling ${domain}`
+    );
+  }
 
   if (domainPaused.get(domain)) {
     throw new Error(`Domain ${domain} is paused due to CAPTCHA challenge`);
   }
 
-  const allowed = await isAllowedByRobots(url, "archivelens");
-  if (!allowed) {
-    throw new Error(`Robots policy blocks URL: ${url}`);
+  const robots = await getRobotsInfo(url, ROBOTS_AGENT, contact);
+  if (!robots.allowed) {
+    throw new RobotsBlockedError(`Robots policy blocks URL: ${url}`);
   }
+  const minDelay = effectiveDelaySeconds(domain, settings.crawlDelaySeconds, robots.crawlDelay) * 1000;
 
   return enqueueDomainRequest(domain, async () => {
     await enforceDelay(domain, minDelay);
+    await takeDailyRequest(domain, settings);
 
     const headers = new Headers(options.headers || {});
-    const contact = settings.contactEmail || "unset@example.com";
-    const ua = `ArchiveLens/1.0 (Research Extension; respectful crawl; contact: ${contact})`;
-
-    // Browsers may ignore User-Agent overrides from extension fetch; we still declare policy intent.
-    headers.set("User-Agent", ua);
+    headers.set("User-Agent", userAgentFor(contact));
     headers.set("Accept", headers.get("Accept") || "text/html,application/pdf,*/*");
     headers.delete("Referer");
     headers.delete("Cookie");
@@ -154,17 +133,21 @@ export async function policyFetch(url, options = {}, settings = {}) {
     const response = await fetch(url, fetchOptions);
     const status = response.status;
 
-    if (status === 429) {
-      await backoffDomain(domain, 60000);
-      throw new RetryableHttpError("Too Many Requests", 429, 60000, 1);
+    if (status === 429 || status === 503) {
+      // Honour the server's own Retry-After when it sends one.
+      const retryMs = parseRetryAfter(response.headers.get("retry-after"));
+      if (status === 429) {
+        const waitMs = Math.max(60_000, retryMs ?? 0);
+        await backoffDomain(domain, waitMs);
+        throw new RetryableHttpError("Too Many Requests", 429, waitMs, 1);
+      }
+      const waitMs = Math.max(2_000, retryMs ?? 0);
+      await backoffDomain(domain, waitMs);
+      throw new RetryableHttpError("Service unavailable", 503, waitMs, 3);
     }
 
     if (status === 403) {
       throw new PermanentHttpError("Access denied", 403);
-    }
-
-    if (status === 503) {
-      throw new RetryableHttpError("Service unavailable", 503, 2000, 3);
     }
 
     const clone = response.clone();
@@ -200,13 +183,6 @@ async function safeReadText(response) {
     return "";
   }
   return "";
-}
-
-function effectiveDelaySeconds(domain, userSetting) {
-  if (domain.endsWith(".gov") || domain.endsWith(".mil")) {
-    return Math.max(6, userSetting || 3);
-  }
-  return Math.min(10, Math.max(1, userSetting || 3));
 }
 
 function enqueueDomainRequest(domain, fn) {
@@ -265,5 +241,35 @@ export class CaptchaDetectedError extends Error {
   constructor(message) {
     super(message);
     this.name = "CaptchaDetectedError";
+  }
+}
+
+// The site's robots.txt disallows this URL. Final: never retried.
+export class RobotsBlockedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RobotsBlockedError";
+  }
+}
+
+// robots.txt could not be read (server error or network). Retry later; never assume allowed.
+export class RobotsUnavailableError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RobotsUnavailableError";
+  }
+}
+
+export class DailyCapError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "DailyCapError";
+  }
+}
+
+export class ContactRequiredError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ContactRequiredError";
   }
 }
