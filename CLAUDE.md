@@ -33,6 +33,17 @@ ANTHROPIC_API_KEY=sk-ant-... npm run start:service
 npm run dev -w packages/web
 ```
 
+### Node version
+
+Use Node 20 (`.node-version`), the version Railway builds with. Node 26 couldn't build
+`better-sqlite3` 9.x when last tried. After switching Node versions, rebuild the native module:
+
+```bash
+npm rebuild better-sqlite3
+```
+
+For local Postgres tests, use major version 18, matching production.
+
 ### Required environment variables
 
 | Variable           | Required | Default              | Purpose                          |
